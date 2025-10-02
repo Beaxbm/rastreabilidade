@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drug Extraction Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .step { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .waiting { background-color: #fff3cd; border-color: #ffeaa7; }
+        button { padding: 10px 20px; margin: 5px; }
+        #fileInput { margin: 10px 0; }
+        #results { margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>GAUGE Drug Extraction Diagnostic Test</h1>
+    
+    <div id="step1" class="step waiting">
+        <h3>Step 1: Test API Health</h3>
+        <button onclick="testApiHealth()">Test API Health</button>
+        <div id="apiHealth"></div>
+    </div>
+
+    <div id="step2" class="step waiting">
+        <h3>Step 2: Test Python Service</h3>
+        <button onclick="testPythonHealth()">Test Python Service</button>
+        <div id="pythonHealth"></div>
+    </div>
+
+    <div id="step3" class="step waiting">
+        <h3>Step 3: Login Test</h3>
+        <button onclick="testLogin()">Login as Admin</button>
+        <div id="loginResult"></div>
+    </div>
+
+    <div id="step4" class="step waiting">
+        <h3>Step 4: File Upload Test</h3>
+        <input type="file" id="fileInput" accept="image/*">
+        <button onclick="testFileUpload()">Test File Upload</button>
+        <div id="uploadResult"></div>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        let authToken = null;
+
+        async function testApiHealth() {
+            try {
+                const response = await fetch('/api/health');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('apiHealth').innerHTML = `✅ API Health: ${data.status}`;
+                    document.getElementById('step1').className = 'step success';
+                } else {
+                    throw new Error('API health check failed');
+                }
+            } catch (error) {
+                document.getElementById('apiHealth').innerHTML = `❌ API Error: ${error.message}`;
+                document.getElementById('step1').className = 'step error';
+            }
+        }
+
+        async function testPythonHealth() {
+            try {
+                const response = await fetch('/api/health'); // Testing through API proxy
+                const pythonResponse = await fetch('http://localhost:8000/health');
+                const data = await pythonResponse.json();
+                
+                if (pythonResponse.ok) {
+                    document.getElementById('pythonHealth').innerHTML = `✅ Python Service: ${data.status}`;
+                    document.getElementById('step2').className = 'step success';
+                } else {
+                    throw new Error('Python service health check failed');
+                }
+            } catch (error) {
+                document.getElementById('pythonHealth').innerHTML = `❌ Python Error: ${error.message}`;
+                document.getElementById('step2').className = 'step error';
+            }
+        }
+
+        async function testLogin() {
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@gauge.com',
+                        password: 'admin123'
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    authToken = data.token;
+                    document.getElementById('loginResult').innerHTML = `✅ Login successful! User: ${data.user.name}`;
+                    document.getElementById('step3').className = 'step success';
+                } else {
+                    throw new Error(data.error || 'Login failed');
+                }
+            } catch (error) {
+                document.getElementById('loginResult').innerHTML = `❌ Login Error: ${error.message}`;
+                document.getElementById('step3').className = 'step error';
+            }
+        }
+
+        async function testFileUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                document.getElementById('uploadResult').innerHTML = '❌ Please select a file first';
+                return;
+            }
+
+            if (!authToken) {
+                document.getElementById('uploadResult').innerHTML = '❌ Please login first';
+                return;
+            }
+
+            try {
+                const formData = new FormData();
+                formData.append('image', file);
+
+                document.getElementById('uploadResult').innerHTML = '⏳ Uploading and processing...';
+
+                const response = await fetch('/api/drugs/extract-from-image', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('uploadResult').innerHTML = `✅ Upload successful!`;
+                    document.getElementById('step4').className = 'step success';
+                    
+                    // Display results
+                    document.getElementById('results').innerHTML = `
+                        <h3>Extraction Results:</h3>
+                        <p><strong>Drug Name:</strong> ${data.data.medication.name}</p>
+                        <p><strong>Batch Number:</strong> ${data.data.medication.batchNumber || 'Not detected'}</p>
+                        <p><strong>Dosage:</strong> ${data.data.medication.dosage || 'Not detected'}</p>
+                        <p><strong>QR Code Generated:</strong> ✅</p>
+                        <img src="${data.data.qrDataUrl}" alt="QR Code" style="max-width: 200px;">
+                    `;
+                } else {
+                    throw new Error(data.error || 'Upload failed');
+                }
+            } catch (error) {
+                document.getElementById('uploadResult').innerHTML = `❌ Upload Error: ${error.message}`;
+                document.getElementById('step4').className = 'step error';
+            }
+        }
+
+        // Auto-run initial tests
+        window.onload = function() {
+            testApiHealth();
+            setTimeout(testPythonHealth, 1000);
+        };
+    </script>
+</body>
+</html>

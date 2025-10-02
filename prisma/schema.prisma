@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      UserRole @default(OPERATOR)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  scanEvents ScanEvent[]
+  auditLogs  AuditLog[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+model Medication {
+  id                 String  @id @default(uuid())
+  name               String
+  anvisaCode         String?
+  description        String?
+  batchNumber        String?
+  expirationDate     DateTime?
+  manufacturingDate  DateTime?
+  manufacturer       String?
+  dosage             String?
+  registrationNumber String?
+  qrCode             String? // Generated QR code data
+  status             MedicationStatus @default(ACTIVE)
+  
+  // Storage and conditions
+  storageLocation    String? // e.g., "Freezer 1", "Cabinet 3", "Room A1"
+  storageConditions  String? // e.g., "2-8°C", "Room temperature", "Dry place"
+  currentTemperature Float?  // Current storage temperature
+  alertLevel         AlertLevel @default(NORMAL)
+  
+  // Audit fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  
+  // Relations
+  lots      Lot[]
+  alerts    MedicationAlert[]
+
+  @@map("medications")
+}
+
+enum MedicationStatus {
+  ACTIVE
+  INACTIVE
+  RECALLED
+  EXPIRED
+}
+
+enum AlertLevel {
+  NORMAL
+  WARNING    // Close to expiration or storage issue
+  CRITICAL   // Expired or dangerous storage conditions
+  EMERGENCY  // Immediate action required
+}
+
+model MedicationAlert {
+  id           String   @id @default(uuid())
+  medication   Medication @relation(fields: [medicationId], references: [id])
+  medicationId String
+  type         AlertType
+  severity     AlertLevel
+  message      String
+  isResolved   Boolean @default(false)
+  resolvedAt   DateTime?
+  resolvedBy   String?
+  
+  // Audit fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("medication_alerts")
+}
+
+enum AlertType {
+  EXPIRATION_WARNING    // 30 days before expiration
+  EXPIRATION_CRITICAL   // 7 days before expiration
+  EXPIRED               // Past expiration date
+  TEMPERATURE_HIGH      // Temperature above range
+  TEMPERATURE_LOW       // Temperature below range
+  STORAGE_CONDITION     // Wrong storage conditions
+  LOCATION_MOVED        // Medication moved locations
+}
+
+model Lot {
+  id           String   @id @default(uuid())
+  medication   Medication @relation(fields: [medicationId], references: [id])
+  medicationId String
+  number       String
+  expiresAt    DateTime
+  
+  // Audit fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  
+  // Relations
+  items     Item[]
+
+  @@unique([medicationId, number])
+  @@map("lots")
+}
+
+model Item {
+  id        String     @id @default(uuid())
+  lot       Lot        @relation(fields: [lotId], references: [id])
+  lotId     String
+  serial    String
+  status    ItemStatus @default(ACTIVE)
+  qrPayload String
+  
+  // Audit fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  
+  // Relations
+  events    ScanEvent[]
+
+  @@unique([lotId, serial])
+  @@map("items")
+}
+
+enum ItemStatus {
+  ACTIVE
+  DISPOSED
+  RECALLED
+}
+
+model ScanEvent {
+  id         String    @id @default(uuid())
+  item       Item      @relation(fields: [itemId], references: [id])
+  itemId     String
+  user       User?     @relation(fields: [userId], references: [id])
+  userId     String?
+  eventType  EventType
+  checkpoint String?
+  
+  // Location data
+  lat      Decimal? @db.Decimal(9, 6)
+  lng      Decimal? @db.Decimal(9, 6)
+  accuracy Decimal? @db.Decimal(6, 2)
+  
+  // Additional metadata
+  metadata   Json?
+  deviceInfo String?
+  ipAddress  String?
+  
+  createdAt DateTime @default(now())
+
+  @@map("scan_events")
+}
+
+enum EventType {
+  RECEIPT
+  STOCK
+  DISPENSE
+  RETURN
+  TRANSFER
+  DISCARD
+  COUNT
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String
+  entityType String
+  entityId   String
+  userId     String?
+  details    Json?    // Store additional details as JSON
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user       User?       @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
